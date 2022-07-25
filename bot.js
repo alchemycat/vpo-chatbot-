@@ -23,7 +23,8 @@ const mainScene = new WizardScene(
   },
   (ctx) => {
     try {
-      if (ctx.message.text.length > 40) {
+      console.log(`Ім'я: ${JSON.stringify(ctx.message)}`);
+      if (!ctx.message.text || ctx.message.text.length > 40) {
         throw new Error("Відповідь не може бути більше 40 символів");
       }
 
@@ -43,14 +44,16 @@ const mainScene = new WizardScene(
     } catch (e) {
       console.error(e.message);
       ctx.reply(e.message);
-      ctx.wizard.selectStep(ctx.wizard.cursor);
-      return;
+      return ctx.scene.reenter();
+      // ctx.wizard.selectStep(ctx.wizard.cursor);
+      // return;
     }
   },
   (ctx) => {
     let answer;
 
     try {
+      console.log(`Довідка впо: ${JSON.stringify(ctx.message)}`);
       if (ctx.message) {
         ctx.reply("Чи є у вас довідка ВПО?", {
           reply_markup: {
@@ -87,6 +90,7 @@ const mainScene = new WizardScene(
   },
   (ctx) => {
     try {
+      console.log(`Фото довідки: ${JSON.stringify(ctx.message)}`);
       let fileId;
       if (ctx.message.document) {
         fileId = ctx.message.document.file_id;
@@ -94,7 +98,10 @@ const mainScene = new WizardScene(
       if (ctx.message.photo) {
         fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
       }
-      // ctx.wizard.state.photo = `https://api.telegram.org/file/bot${process.env.TOKEN}/${ctx.message.document.file_name}`;
+
+      if (!fileId) {
+        throw new Error("Додайте фото");
+      }
 
       ctx.telegram
         .getFile(fileId)
@@ -105,6 +112,7 @@ const mainScene = new WizardScene(
         .then((url) => {
           ctx.wizard.state.photo = url;
         });
+
       ctx.reply("Чи є у вас діти віком до 16 років ?", {
         reply_markup: {
           inline_keyboard: [
@@ -127,6 +135,7 @@ const mainScene = new WizardScene(
   (ctx) => {
     let answer;
     try {
+      console.log(`Діти: ${JSON.stringify(ctx.message)}`);
       if (ctx.message) {
         ctx.reply("Чи є у вас діти віком до 16 років ?", {
           reply_markup: {
@@ -165,7 +174,9 @@ const mainScene = new WizardScene(
   },
   (ctx) => {
     try {
-      if (ctx.message.text.length > 200) {
+      console.log(`Інфо про дітей: ${JSON.stringify(ctx.message)}`);
+
+      if (!ctx.message.text || ctx.message.text.length > 200) {
         throw new Error("Відповідь не може бути більше 200 символів");
       }
       ctx.wizard.state.childs = ctx.message.text;
@@ -180,7 +191,8 @@ const mainScene = new WizardScene(
   },
   (ctx) => {
     try {
-      if (ctx.message.text.length > 40) {
+      console.log(`З якого міста або села: ${JSON.stringify(ctx.message)}`);
+      if (!ctx.message.text || ctx.message.text.length > 40) {
         throw new Error("Відповідь не може бути більше 40 символів");
       }
       ctx.wizard.state.city = ctx.message.text;
@@ -195,7 +207,8 @@ const mainScene = new WizardScene(
   },
   (ctx) => {
     try {
-      if (ctx.message.text.length > 40) {
+      console.log(`Район міста: ${JSON.stringify(ctx.message)}`);
+      if (!ctx.message.text || ctx.message.text.length > 40) {
         throw new Error("Відповідь не може бути більше 40 символів");
       }
       ctx.wizard.state.area = ctx.message.text;
@@ -210,7 +223,8 @@ const mainScene = new WizardScene(
   },
   (ctx) => {
     try {
-      if (ctx.message.text.length > 200) {
+      console.log(`Яка саме допомога потрібна: ${JSON.stringify(ctx.message)}`);
+      if (!ctx.message.text || ctx.message.text.length > 200) {
         throw new Error("Відповідь не може бути більше 200 символів");
       }
       ctx.wizard.state.helpDetails = ctx.message.text;
@@ -237,9 +251,14 @@ const mainScene = new WizardScene(
     }
   },
   (ctx) => {
-    console.log(ctx.message);
-    if (ctx.message.contact) {
-      ctx.wizard.state.phone = ctx.message.contact.phone_number;
+    try {
+      console.log(`Телефон: ${JSON.stringify(ctx.message)}`);
+      if (ctx.message.contact) {
+        ctx.wizard.state.phone = ctx.message.contact.phone_number;
+      }
+      if (ctx.message.text) {
+        ctx.wizard.state.phone = ctx.message.text;
+      }
 
       axios
         .post(process.env.SCRIPT_URL, {
@@ -264,8 +283,11 @@ const mainScene = new WizardScene(
           }
           ctx.scene.leave();
         });
-    } else {
+    } catch (e) {
+      console.error(e.message);
+      ctx.reply(e.message);
       ctx.wizard.selectStep(ctx.wizard.cursor);
+      return;
     }
   }
 );
