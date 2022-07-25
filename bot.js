@@ -237,23 +237,33 @@ const mainScene = new WizardScene(
     }
   },
   (ctx) => {
+    console.log(ctx.message);
     if (ctx.message.contact) {
       ctx.wizard.state.phone = ctx.message.contact.phone_number;
 
-      axios.post(process.env.SCRIPT_URL, {
-        body: [
-          ctx.wizard.state.name,
-          ctx.wizard.state.photo,
-          ctx.wizard.state.childs,
-          ctx.wizard.state.city,
-          ctx.wizard.state.area,
-          ctx.wizard.state.helpDetails,
-          ctx.wizard.state.phone,
-        ],
-        url: process.env.SPREADSHEET_URL,
-      });
-      ctx.reply("Ваша анкета додана");
-      ctx.scene.leave();
+      axios
+        .post(process.env.SCRIPT_URL, {
+          body: [
+            ctx.wizard.state.name,
+            ctx.wizard.state.photo,
+            ctx.wizard.state.childs,
+            ctx.wizard.state.city,
+            ctx.wizard.state.area,
+            ctx.wizard.state.helpDetails,
+            ctx.wizard.state.phone,
+          ],
+          url: process.env.SPREADSHEET_URL,
+        })
+        .then((response) => {
+          if (response.status == 200) {
+            ctx.reply("Ваша анкета додана");
+          } else {
+            ctx.reply(
+              "Виникла помилка при збережені анкети, спробуйте пізніше"
+            );
+          }
+          ctx.scene.leave();
+        });
     } else {
       ctx.wizard.selectStep(ctx.wizard.cursor);
     }
