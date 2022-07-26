@@ -10,8 +10,8 @@ const {
 
 const bot = new Telegraf(process.env.TOKEN);
 
-const mainScene = new WizardScene(
-  "candidate",
+const firstScene = new WizardScene(
+  "first",
   (ctx) => {
     try {
       ctx.reply("Введіть ваше повне ім'я:");
@@ -23,7 +23,7 @@ const mainScene = new WizardScene(
   },
   (ctx) => {
     try {
-      console.log(`Ім'я: ${JSON.stringify(ctx.message)}`);
+      console.log(`Ім'я: ${JSON.stringify(ctx.message.text)}`);
       if (!ctx.message.text || ctx.message.text.length > 40) {
         throw new Error("Відповідь не може бути більше 40 символів");
       }
@@ -43,29 +43,18 @@ const mainScene = new WizardScene(
       return ctx.wizard.next();
     } catch (e) {
       console.error(e.message);
-      ctx.reply(e.message);
       return ctx.scene.reenter();
-      // ctx.wizard.selectStep(ctx.wizard.cursor);
-      // return;
     }
   },
   (ctx) => {
     let answer;
-
     try {
-      console.log(`Довідка впо: ${JSON.stringify(ctx.message)}`);
+      console.log(
+        `Чи є довідка впо: ${JSON.stringify(ctx.update.callback_query.data)}`
+      );
+
       if (ctx.message) {
-        ctx.reply("Чи є у вас довідка ВПО?", {
-          reply_markup: {
-            inline_keyboard: [
-              [
-                { text: "Так", callback_data: "Так" },
-                { text: "Ні", callback_data: "Ні" },
-              ],
-            ],
-          },
-        });
-        return;
+        throw new Error("Відповідь у неправильному форматі");
       } else {
         answer = ctx.update.callback_query.data;
       }
@@ -77,20 +66,41 @@ const mainScene = new WizardScene(
         ctx.scene.leave();
         return;
       }
-
-      ctx.reply("Будь ласка завантажте копію довідки ВПО (фото)");
-
-      return ctx.wizard.next();
+      ctx.scene.leave();
+      ctx.scene.enter("second", ctx.wizard.state);
     } catch (e) {
       console.error(e.message);
-      ctx.reply(e.message);
+      ctx.reply("Виберіть так або ні");
       ctx.wizard.selectStep(ctx.wizard.cursor);
       return;
     }
+  }
+);
+
+const secondScene = new WizardScene(
+  "second",
+  (ctx) => {
+    ctx.reply("Скільки фото ви хочете завантажити (вкажіть цифру від 1 до 3)");
+    return ctx.wizard.next();
   },
   (ctx) => {
     try {
-      console.log(`Фото довідки: ${JSON.stringify(ctx.message)}`);
+      if (!ctx.message.text) {
+        throw new Error();
+      }
+      if (ctx.message.text.length > 1 || !/(1|2|3)/.test(ctx.message.text)) {
+        throw new Error();
+      }
+
+      ctx.wizard.state.photoCount = ctx.message.text;
+      ctx.reply("Будь ласка завантажте копію довідки ВПО (фото)");
+      return ctx.wizard.next();
+    } catch (e) {
+      return ctx.scene.reenter();
+    }
+  },
+  async (ctx) => {
+    try {
       let fileId;
       if (ctx.message.document) {
         fileId = ctx.message.document.file_id;
@@ -103,55 +113,50 @@ const mainScene = new WizardScene(
         throw new Error("Додайте фото");
       }
 
-      ctx.telegram
-        .getFile(fileId)
-        .then(
-          (data) =>
-            `https://api.telegram.org/file/bot${process.env.TOKEN}/${data.file_path}`
-        )
-        .then((url) => {
-          ctx.wizard.state.photo = url;
-        });
+      let data = await ctx.telegram.getFile(fileId);
+      let url = `https://api.telegram.org/file/bot${process.env.TOKEN}/${data.file_path}`;
+      ctx.wizard.state.photo.push(url);
+      console.log(`Photo count: ${ctx.wizard.state.photoCount}`);
+      console.log(`Photos length: ${ctx.wizard.state.photo.length}`);
 
-      ctx.reply("Чи є у вас діти віком до 16 років ?", {
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: "Так", callback_data: "Так" },
-              { text: "Ні", callback_data: "Ні" },
-            ],
-          ],
-        },
-      });
-
-      return ctx.wizard.next();
+      if (ctx.wizard.state.photoCount == ctx.wizard.state.photo.length) {
+        ctx.scene.leave();
+        ctx.scene.enter("third", ctx.wizard.state);
+      }
     } catch (e) {
       console.error(e.message);
       ctx.reply("Додайте фото вашої довідки");
       ctx.wizard.selectStep(ctx.wizard.cursor);
       return;
     }
+  }
+);
+
+const thirdScene = new WizardScene(
+  "third",
+  (ctx) => {
+    ctx.reply("Чи є у вас діти віком до 16 років ?", {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "Так", callback_data: "Так" },
+            { text: "Ні", callback_data: "Ні" },
+          ],
+        ],
+      },
+    });
+    return ctx.wizard.next();
   },
   (ctx) => {
-    let answer;
     try {
-      console.log(`Діти: ${JSON.stringify(ctx.message)}`);
-      if (ctx.message) {
-        ctx.reply("Чи є у вас діти віком до 16 років ?", {
-          reply_markup: {
-            inline_keyboard: [
-              [
-                { text: "Так", callback_data: "Так" },
-                { text: "Ні", callback_data: "Ні" },
-              ],
-            ],
-          },
-        });
-        ctx.wizard.selectStep(ctx.wizard.cursor);
-        return;
-      } else {
-        answer = ctx.update.callback_query.data;
-      }
+      let answer;
+      console.log(
+        `Чи є діти до 16 років: ${JSON.stringify(
+          ctx.update.callback_query.data
+        )}`
+      );
+      answer = ctx.update.callback_query.data;
+      console.log(`answer: ${answer}`);
       if (answer == "Ні") {
         ctx.reply(
           "Нажаль, на цей час ми маємо можливість допомогати тільки сім'ям з дітьми до 16 років"
@@ -159,22 +164,19 @@ const mainScene = new WizardScene(
         ctx.scene.leave();
         return;
       }
-
       ctx.reply(
         "Будь ласка скажіть скільки дітей в вашій родині та скільки їм років ?"
       );
-
       return ctx.wizard.next();
     } catch (e) {
       console.error(e.message);
-      ctx.reply(e.message);
       ctx.wizard.selectStep(ctx.wizard.cursor);
       return;
     }
   },
   (ctx) => {
     try {
-      console.log(`Інфо про дітей: ${JSON.stringify(ctx.message)}`);
+      console.log(`Інфо про дітей: ${JSON.stringify(ctx.message.text)}`);
 
       if (!ctx.message.text || ctx.message.text.length > 200) {
         throw new Error("Відповідь не може бути більше 200 символів");
@@ -184,14 +186,16 @@ const mainScene = new WizardScene(
       return ctx.wizard.next();
     } catch (e) {
       console.error(e);
-      ctx.reply(e.message);
+
       ctx.wizard.selectStep(ctx.wizard.cursor);
       return;
     }
   },
   (ctx) => {
     try {
-      console.log(`З якого міста або села: ${JSON.stringify(ctx.message)}`);
+      console.log(
+        `З якого міста або села: ${JSON.stringify(ctx.message.text)}`
+      );
       if (!ctx.message.text || ctx.message.text.length > 40) {
         throw new Error("Відповідь не може бути більше 40 символів");
       }
@@ -200,14 +204,14 @@ const mainScene = new WizardScene(
       return ctx.wizard.next();
     } catch (e) {
       console.error(e.message);
-      ctx.reply(e.message);
+
       ctx.wizard.selectStep(ctx.wizard.cursor);
       return;
     }
   },
   (ctx) => {
     try {
-      console.log(`Район міста: ${JSON.stringify(ctx.message)}`);
+      console.log(`Район міста: ${JSON.stringify(ctx.message.text)}`);
       if (!ctx.message.text || ctx.message.text.length > 40) {
         throw new Error("Відповідь не може бути більше 40 символів");
       }
@@ -216,14 +220,16 @@ const mainScene = new WizardScene(
       return ctx.wizard.next();
     } catch (e) {
       console.error(e.message);
-      ctx.reply(e.message);
+
       ctx.wizard.selectStep(ctx.wizard.cursor);
       return;
     }
   },
   (ctx) => {
     try {
-      console.log(`Яка саме допомога потрібна: ${JSON.stringify(ctx.message)}`);
+      console.log(
+        `Яка саме допомога потрібна: ${JSON.stringify(ctx.message.text)}`
+      );
       if (!ctx.message.text || ctx.message.text.length > 200) {
         throw new Error("Відповідь не може бути більше 200 символів");
       }
@@ -245,14 +251,13 @@ const mainScene = new WizardScene(
       return ctx.wizard.next();
     } catch (e) {
       console.error(e.message);
-      ctx.reply(e.message);
+
       ctx.wizard.selectStep(ctx.wizard.cursor);
       return;
     }
   },
   (ctx) => {
     try {
-      console.log(`Телефон: ${JSON.stringify(ctx.message)}`);
       if (ctx.message.contact) {
         ctx.wizard.state.phone = ctx.message.contact.phone_number;
       }
@@ -260,12 +265,14 @@ const mainScene = new WizardScene(
         ctx.wizard.state.phone = ctx.message.text;
       }
 
+      console.log(`Телефон: ${JSON.stringify(ctx.wizard.state.phone)}`);
+
       axios
         .post(process.env.SCRIPT_URL, {
           body: [
             ctx.wizard.state.name,
-            ctx.wizard.state.photo,
             ctx.wizard.state.childs,
+            ctx.wizard.state.photo.join("\n"),
             ctx.wizard.state.city,
             ctx.wizard.state.area,
             ctx.wizard.state.helpDetails,
@@ -285,14 +292,14 @@ const mainScene = new WizardScene(
         });
     } catch (e) {
       console.error(e.message);
-      ctx.reply(e.message);
+
       ctx.wizard.selectStep(ctx.wizard.cursor);
       return;
     }
   }
 );
 
-const stage = new Stage([mainScene]);
+const stage = new Stage([firstScene, secondScene, thirdScene]);
 
 bot.use(session());
 bot.use(stage.middleware());
@@ -301,7 +308,7 @@ bot.start(async (ctx) => {
   await ctx.reply(
     "Привіт, надайте будь ласка відповідь на наступні запитання:"
   );
-  ctx.scene.enter("candidate");
+  ctx.scene.enter("first", { photo: [] });
 });
 
 bot.help((ctx) => {
@@ -309,3 +316,5 @@ bot.help((ctx) => {
 });
 
 bot.launch();
+
+//another scene
