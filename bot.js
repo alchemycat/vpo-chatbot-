@@ -50,10 +50,6 @@ const firstScene = new WizardScene(
   (ctx) => {
     let answer;
     try {
-      console.log(
-        `Чи є довідка впо: ${JSON.stringify(ctx.update.callback_query.data)}`
-      );
-
       if (ctx.message) {
         throw new Error("Відповідь у неправильному форматі");
       } else {
@@ -64,43 +60,26 @@ const firstScene = new WizardScene(
         ctx.reply(
           "Нажаль, на цей час ми маємо можливість допомогати тільки сім'ям ВПО"
         );
+
         ctx.scene.leave();
         return;
       }
-      ctx.scene.leave();
-      ctx.scene.enter("second", ctx.wizard.state);
+
+      console.log(
+        `Чи є довідка впо: ${JSON.stringify(ctx.update.callback_query.data)}`
+      );
+
+      ctx.reply("Будь ласка завантажте копію довідки ВПО (фото)");
+
+      return ctx.wizard.next();
     } catch (e) {
       console.error(e.message);
       ctx.reply("Виберіть так або ні");
       ctx.wizard.selectStep(ctx.wizard.cursor);
       return;
     }
-  }
-);
-
-const secondScene = new WizardScene(
-  "second",
-  (ctx) => {
-    ctx.reply("Скільки фото ви хочете завантажити (вкажіть цифру від 1 до 3)");
-    return ctx.wizard.next();
   },
   (ctx) => {
-    try {
-      if (!ctx.message.text) {
-        throw new Error();
-      }
-      if (ctx.message.text.length > 1 || !/(1|2|3)/.test(ctx.message.text)) {
-        throw new Error();
-      }
-
-      ctx.wizard.state.photoCount = ctx.message.text;
-      ctx.reply("Будь ласка завантажте копію довідки ВПО (фото)");
-      return ctx.wizard.next();
-    } catch (e) {
-      return ctx.scene.reenter();
-    }
-  },
-  async (ctx) => {
     try {
       let fileId;
       if (ctx.message.document) {
@@ -114,16 +93,18 @@ const secondScene = new WizardScene(
         throw new Error("Додайте фото");
       }
 
-      let data = await ctx.telegram.getFile(fileId);
-      let url = `https://api.telegram.org/file/bot${process.env.TOKEN}/${data.file_path}`;
-      ctx.wizard.state.photo.push(url);
-      console.log(`Photo count: ${ctx.wizard.state.photoCount}`);
-      console.log(`Photos length: ${ctx.wizard.state.photo.length}`);
+      ctx.telegram
+        .getFile(fileId)
+        .then(
+          (data) =>
+            `https://api.telegram.org/file/bot${process.env.TOKEN}/${data.file_path}`
+        )
+        .then((url) => {
+          ctx.wizard.state.photo = url;
+        });
 
-      if (ctx.wizard.state.photoCount == ctx.wizard.state.photo.length) {
-        ctx.scene.leave();
-        ctx.scene.enter("third", ctx.wizard.state);
-      }
+      ctx.scene.leave();
+      ctx.scene.enter("second", ctx.wizard.state);
     } catch (e) {
       console.error(e.message);
       ctx.reply("Додайте фото вашої довідки");
@@ -133,8 +114,8 @@ const secondScene = new WizardScene(
   }
 );
 
-const thirdScene = new WizardScene(
-  "third",
+const secondScene = new WizardScene(
+  "second",
   (ctx) => {
     ctx.reply("Чи є у вас діти віком до 16 років ?", {
       reply_markup: {
@@ -165,6 +146,7 @@ const thirdScene = new WizardScene(
         ctx.scene.leave();
         return;
       }
+
       ctx.reply(
         "Будь ласка скажіть скільки дітей в вашій родині та скільки їм років ?"
       );
@@ -189,7 +171,9 @@ const thirdScene = new WizardScene(
         throw new Error();
       }
 
-      ctx.reply("З якого ви міста або села ?");
+      ctx.reply(
+        "Скільки фото ви хочете завантажити, копії довідки ВПО або свідотцтво про народження ваших дітей (вкажіть цифру від 1 до 3) "
+      );
       return ctx.wizard.next();
     } catch (e) {
       console.error(e);
@@ -199,9 +183,64 @@ const thirdScene = new WizardScene(
   },
   (ctx) => {
     try {
-      console.log(
-        `З якого міста або села: ${JSON.stringify(ctx.message.text)}`
+      if (!ctx.message.text) {
+        throw new Error();
+      }
+      if (ctx.message.text.length > 1 || !/(1|2|3)/.test(ctx.message.text)) {
+        throw new Error();
+      }
+
+      ctx.wizard.state.photoCount = ctx.message.text;
+      ctx.reply(
+        "Будь ласка завантажте копії довідки ВПО або свідотцтво про народження ваших дітей (потрібно додати ту кількість фото яку ви вказали)"
       );
+      return ctx.wizard.next();
+    } catch (e) {
+      ctx.reply("Вкажіть цифру від 1-го до 3-х");
+      return ctx.scene.selectStep(ctx.wizard.cursor);
+    }
+  },
+  async (ctx) => {
+    try {
+      let fileId;
+      if (ctx.message.document) {
+        fileId = ctx.message.document.file_id;
+      }
+      if (ctx.message.photo) {
+        fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+      }
+
+      if (!fileId) {
+        throw new Error("Додайте фото");
+      }
+
+      let data = await ctx.telegram.getFile(fileId);
+      let url = `https://api.telegram.org/file/bot${process.env.TOKEN}/${data.file_path}`;
+      ctx.wizard.state.childsPhoto.push(url);
+      console.log(`Photo count: ${ctx.wizard.state.photoCount}`);
+      console.log(`Photos length: ${ctx.wizard.state.childsPhoto.length}`);
+
+      if (ctx.wizard.state.photoCount == ctx.wizard.state.childsPhoto.length) {
+        ctx.scene.leave();
+        ctx.scene.enter("third", ctx.wizard.state);
+      }
+    } catch (e) {
+      console.error(e.message);
+      ctx.reply("Додайте фото вашої довідки");
+      ctx.wizard.selectStep(ctx.wizard.cursor);
+      return;
+    }
+  }
+);
+
+const thirdScene = new WizardScene(
+  "third",
+  (ctx) => {
+    ctx.reply("З якого ви міста або села ?");
+    return ctx.wizard.next();
+  },
+  (ctx) => {
+    try {
       if (!ctx.message.text || ctx.message.text.length > 40) {
         throw new Error("Відповідь не може бути більше 40 символів");
       }
@@ -298,8 +337,9 @@ const thirdScene = new WizardScene(
         .post(process.env.SCRIPT_URL, {
           body: [
             ctx.wizard.state.name,
+            ctx.wizard.state.photo,
             ctx.wizard.state.childs,
-            ctx.wizard.state.photo.join("\n"),
+            ctx.wizard.state.childsPhoto.join("\n"),
             ctx.wizard.state.city,
             ctx.wizard.state.area,
             ctx.wizard.state.helpDetails,
@@ -335,7 +375,7 @@ bot.start(async (ctx) => {
   await ctx.reply(
     "Привіт, надайте будь ласка відповідь на наступні запитання:"
   );
-  ctx.scene.enter("first", { photo: [] });
+  ctx.scene.enter("first", { childsPhoto: [] });
 });
 
 bot.help((ctx) => {
@@ -343,5 +383,3 @@ bot.help((ctx) => {
 });
 
 bot.launch();
-
-//another scene
