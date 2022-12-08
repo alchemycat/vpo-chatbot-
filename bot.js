@@ -10,6 +10,8 @@ const {
 
 const bot = new Telegraf(process.env.TOKEN);
 
+console.log('Бот працює...');
+
 const firstScene = new WizardScene(
     'first',
     (ctx) => {
@@ -44,7 +46,8 @@ const firstScene = new WizardScene(
             return ctx.wizard.next();
         } catch (e) {
             console.error(e.message);
-            return ctx.wizard.selectStep(ctx.wizard.cursor);
+            ctx.wizard.selectStep(ctx.wizard.cursor);
+            return;
         }
     },
     (ctx) => {
@@ -71,7 +74,9 @@ const firstScene = new WizardScene(
                 )}`
             );
 
-            ctx.reply('Будь ласка завантажте копію довідки ВПО (фото)');
+            ctx.reply(
+                'Будь ласка завантажте копію довідки ВПО (фото, до 20 мегабайт)'
+            );
 
             return ctx.wizard.next();
         } catch (e) {
@@ -81,7 +86,7 @@ const firstScene = new WizardScene(
             return;
         }
     },
-    (ctx) => {
+    async (ctx) => {
         try {
             let fileId;
             if (ctx.message.document) {
@@ -96,7 +101,7 @@ const firstScene = new WizardScene(
                 throw new Error('Додайте фото');
             }
 
-            ctx.telegram
+            await ctx.telegram
                 .getFile(fileId)
                 .then(
                     (data) =>
@@ -106,11 +111,12 @@ const firstScene = new WizardScene(
                     ctx.wizard.state.photo = url;
                 });
 
+            // console.log(state);
             ctx.scene.leave();
             ctx.scene.enter('second', ctx.wizard.state);
         } catch (e) {
-            console.error(e.message);
-            ctx.reply('Додайте фото вашої довідки');
+            console.log(e);
+            ctx.reply('Помилка, відправте файл до 20 мегабайт.');
             ctx.wizard.selectStep(ctx.wizard.cursor);
             return;
         }
@@ -120,17 +126,22 @@ const firstScene = new WizardScene(
 const secondScene = new WizardScene(
     'second',
     (ctx) => {
-        ctx.reply('Чи є у вас діти віком до 16 років ?', {
-            reply_markup: {
-                inline_keyboard: [
-                    [
-                        { text: 'Так', callback_data: 'Так' },
-                        { text: 'Ні', callback_data: 'Ні' },
+        try {
+            ctx.reply('Чи є у вас діти віком до 14 років ?', {
+                reply_markup: {
+                    inline_keyboard: [
+                        [
+                            { text: 'Так', callback_data: 'Так' },
+                            { text: 'Ні', callback_data: 'Ні' },
+                        ],
                     ],
-                ],
-            },
-        });
-        return ctx.wizard.next();
+                },
+            });
+            return ctx.wizard.next();
+        } catch (err) {
+            console.log(err);
+            return ctx.scene.reenter();
+        }
     },
     (ctx) => {
         try {
@@ -144,7 +155,7 @@ const secondScene = new WizardScene(
 
             if (answer == 'Ні') {
                 ctx.reply(
-                    "Нажаль, на цей час ми маємо можливість допомогати тільки сім'ям з дітьми до 16 років"
+                    'Нажаль, на цей час ми маємо можливість організувати розважальну програму для дітей до 14 років'
                 );
                 ctx.scene.leave();
                 return;
@@ -180,6 +191,9 @@ const secondScene = new WizardScene(
             return ctx.wizard.next();
         } catch (e) {
             console.error(e);
+            ctx.reply(
+                'Будь ласка скажіть скільки дітей в вашій родині та скільки їм років ?'
+            );
             ctx.wizard.selectStep(ctx.wizard.cursor);
             return;
         }
@@ -198,12 +212,12 @@ const secondScene = new WizardScene(
 
             ctx.wizard.state.photoCount = ctx.message.text;
             ctx.reply(
-                'Будь ласка завантажте копії довідки ВПО або свідотцтво про народження ваших дітей (потрібно додати ту кількість фото яку ви вказали)'
+                'Будь ласка завантажте копії довідки ВПО або свідотцтво про народження ваших дітей (потрібно додати ту кількість фото яку ви вказали (кожен файл або фото не повинен перевищувати 20 мегабайт))'
             );
             return ctx.wizard.next();
         } catch (e) {
             ctx.reply('Вкажіть цифру від 1-го до 3-х');
-            return ctx.scene.selectStep(ctx.wizard.cursor);
+            return ctx.wizard.selectStep(ctx.wizard.cursor);
         }
     },
     async (ctx) => {
@@ -223,6 +237,9 @@ const secondScene = new WizardScene(
 
             let data = await ctx.telegram.getFile(fileId);
             let url = `https://api.telegram.org/file/bot${process.env.TOKEN}/${data.file_path}`;
+            if (!url) {
+                throw new Error();
+            }
             ctx.wizard.state.childsPhoto.push(url);
             console.log(`Photo count: ${ctx.wizard.state.photoCount}`);
             console.log(
@@ -238,7 +255,7 @@ const secondScene = new WizardScene(
             }
         } catch (e) {
             console.error(e.message);
-            ctx.reply('Додайте фото вашої довідки');
+            ctx.reply('Додайте фото довідки');
             ctx.wizard.selectStep(ctx.wizard.cursor);
             return;
         }
@@ -267,7 +284,7 @@ const thirdScene = new WizardScene(
             return ctx.wizard.next();
         } catch (e) {
             console.error(e.message);
-
+            ctx.reply('Вкажіть назву міста або села');
             ctx.wizard.selectStep(ctx.wizard.cursor);
             return;
         }
@@ -275,6 +292,7 @@ const thirdScene = new WizardScene(
     (ctx) => {
         try {
             console.log(`Район міста: ${JSON.stringify(ctx.message.text)}`);
+
             if (!ctx.message.text || ctx.message.text.length > 40) {
                 throw new Error('Відповідь не може бути більше 40 символів');
             }
@@ -285,31 +303,31 @@ const thirdScene = new WizardScene(
                 throw new Error();
             }
 
-            ctx.reply('Яку саме допомогу потребуєте ?');
-            return ctx.wizard.next();
-        } catch (e) {
-            console.error(e.message);
+            //         ctx.reply('Яку саме допомогу потребуєте ?');
+            //         return ctx.wizard.next();
+            //     } catch (e) {
+            //         console.error(e.message);
 
-            ctx.wizard.selectStep(ctx.wizard.cursor);
-            return;
-        }
-    },
-    (ctx) => {
-        try {
-            console.log(
-                `Яка саме допомога потрібна: ${JSON.stringify(
-                    ctx.message.text
-                )}`
-            );
-            if (!ctx.message.text || ctx.message.text.length > 200) {
-                throw new Error('Відповідь не може бути більше 200 символів');
-            }
+            //         ctx.wizard.selectStep(ctx.wizard.cursor);
+            //         return;
+            //     }
+            // },
+            // (ctx) => {
+            //     try {
+            //         console.log(
+            //             `Яка саме допомога потрібна: ${JSON.stringify(
+            //                 ctx.message.text
+            //             )}`
+            //         );
+            //         if (!ctx.message.text || ctx.message.text.length > 200) {
+            //             throw new Error('Відповідь не може бути більше 200 символів');
+            //         }
 
-            ctx.wizard.state.helpDetails = ctx.message.text;
+            //         ctx.wizard.state.helpDetails = ctx.message.text;
 
-            if (!ctx.wizard.state.helpDetails) {
-                throw new Error();
-            }
+            //         if (!ctx.wizard.state.helpDetails) {
+            //             throw new Error();
+            //         }
 
             ctx.reply('Ваш контактний телефон:', {
                 reply_markup: {
@@ -329,6 +347,7 @@ const thirdScene = new WizardScene(
         } catch (e) {
             console.error(e.message);
 
+            ctx.reply('Вкажіть правильний район міста');
             ctx.wizard.selectStep(ctx.wizard.cursor);
             return;
         }
@@ -343,9 +362,10 @@ const thirdScene = new WizardScene(
             }
 
             if (!ctx.wizard.state.phone) {
-                throw new Error('');
+                throw new Error();
             }
             console.log(`Телефон: ${JSON.stringify(ctx.wizard.state.phone)}`);
+            ctx.reply('Ваші дані додаються зачекайте');
             axios
                 .post(process.env.SCRIPT_URL, {
                     body: [
@@ -378,7 +398,7 @@ const thirdScene = new WizardScene(
                 });
         } catch (e) {
             console.error(e.message);
-
+            ctx.reply('Вкажіть телефон');
             ctx.wizard.selectStep(ctx.wizard.cursor);
             return;
         }
@@ -392,9 +412,9 @@ bot.use(stage.middleware());
 
 bot.start(async (ctx) => {
     await ctx.reply(
-        'Привіт, надайте будь ласка відповідь на наступні запитання:'
+        'Привіт, організувуємо розважальну програму для дітей в передноворічні свята. Щоб ми добавили вашу дитину в список, надайте будь ласка відповідь на наступні запитання:'
     );
-    ctx.scene.enter('first', { childsPhoto: [] });
+    ctx.scene.enter('first', { photo: null, childsPhoto: [] });
 });
 
 bot.help((ctx) => {
